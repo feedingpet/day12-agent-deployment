@@ -52,7 +52,7 @@ Create a file `MISSION_ANSWERS.md` with your answers to all exercises:
 
 ### Exercise 3.1: Railway deployment
 - URL: https://railway.com/project/afe1a4aa-ef3d-4ec7-a7d0-56ea98b9910c
-- Screenshot: [Link to screenshot in repo]
+- Screenshot: screeenshoot/deploy.png
 
 ## Part 4: API Security
 
@@ -167,7 +167,7 @@ Total messages: 10
 Your final production-ready agent with all files:
 
 ```
-your-repo/
+06-lab-complete/
 ├── app/
 │   ├── main.py              # Main application
 │   ├── config.py            # Configuration
