@@ -1,100 +1,126 @@
-# Lab 12 — Complete Production Agent
+# Production AI Agent - ModernBERT Integration
 
-Kết hợp TẤT CẢ những gì đã học trong 1 project hoàn chỉnh.
-
-## Checklist Deliverable
-
-- [x] Dockerfile (multi-stage, < 500 MB)
-- [x] docker-compose.yml (agent + redis)
-- [x] .dockerignore
-- [x] Health check endpoint (`GET /health`)
-- [x] Readiness endpoint (`GET /ready`)
-- [x] API Key authentication
-- [x] Rate limiting
-- [x] Cost guard
-- [x] Config từ environment variables
-- [x] Structured logging
-- [x] Graceful shutdown
-- [x] Public URL ready (Railway / Render config)
+Dự án AI Agent hoàn chỉnh cho môi trường Production (đáp ứng tiêu chuẩn Lab 06 Complete - Day 12). Ứng dụng này đã được đóng gói sẵn với Docker theo chuẩn **Multi-stage build**, áp dụng các best practices như bảo mật API Key, Rate Limiting, Cost Guard, Stateless Session (Redis) và cấu hình ứng dụng dễ dàng thông qua File Môi trường `(12-Factor App)`. Đặc biệt, mô hình đã được thay đổi linh hoạt sang gọi inference Model **answerdotai/ModernBERT-base** qua HuggingFace API.
 
 ---
 
-## Cấu Trúc
+## 📁 Cấu Trúc Dự Án (Full Source Code)
 
-```
+Dự án tuân thủ cấu trúc quy chuẩn, chia nhỏ các thành phần (modularity) như sau:
+
+```text
 06-lab-complete/
 ├── app/
-│   ├── main.py         # Entry point — kết hợp tất cả
-│   ├── config.py       # 12-factor config
-│   ├── auth.py         # API Key + JWT
-│   ├── rate_limiter.py # Rate limiting
-│   └── cost_guard.py   # Budget protection
-├── Dockerfile          # Multi-stage, production-ready
-├── docker-compose.yml  # Full stack
-├── railway.toml        # Deploy Railway
-├── render.yaml         # Deploy Render
-├── .env.example        # Template
-├── .dockerignore
-└── requirements.txt
+│   ├── main.py              # Main application (Entry point)
+│   ├── config.py            # Configuration variables
+│   ├── auth.py              # Authentication security check
+│   ├── rate_limiter.py      # Rate limiting defense (Sliding Window logic)
+│   └── cost_guard.py        # Cost protection limiting logic
+├── utils/
+│   └── mock_llm.py          # LLM Service (Gọi Inference ModernBERT API)
+├── Dockerfile               # Multi-stage build cho container nhỏ nhẹ
+├── docker-compose.yml       # Full stack bao gồm Agent + Redis DB + LB
+├── requirements.txt         # Dependencies (FastAPI, Redis, Requests, PyJWT...)
+├── .env.example             # Environment template chuẩn
+├── .dockerignore            # Docker ignore file
+├── railway.toml             # Config khi Deploy lên nền tảng Railway
+├── render.yaml              # Config khi Deploy lên nền tảng Render
+└── README.md                # Tệp này (Setup instructions)
 ```
 
 ---
 
-## Chạy Local
+## 🛠 Yêu Cầu Cài Đặt (Prerequisites)
+- `Python 3.11+`
+- `Docker` & `Docker Compose`
+- (Tuỳ chọn) Một API token miễn phí từ [Hugging Face](https://huggingface.co/settings/tokens) để test ModernBERT model.
 
+---
+
+## 🚀 Setup & Launch (Hướng dẫn chạy App)
+
+### 1. Chuẩn bị File môi trường `.env.local`
+Sao chép `.env.example` thành file riêng của bạn:
 ```bash
-# 1. Setup
-cp .env.example .env
+cp .env.example .env.local
+```
 
-# 2. Chạy với Docker Compose
-docker compose up
+Sau đó mở `.env.local` lên để điền các key quan trọng:
+```env
+# (QUAN TRỌNG) Token này lấy từ Hugging Face
+HF_TOKEN=hf_xxxx_dia_chi_token_cua_ban_xyz
 
-# 3. Test
-curl http://localhost/health
+# (QUAN TRỌNG) Mật khẩu tự đặt để bảo vệ API chống gọi lén
+AGENT_API_KEY=my-super-secret-key-123
+```
 
-# 4. Lấy API key từ .env, test endpoint
-API_KEY=$(grep AGENT_API_KEY .env | cut -d= -f2)
-curl -H "X-API-Key: $API_KEY" \
-     -X POST http://localhost/ask \
-     -H "Content-Type: application/json" \
-     -d '{"question": "What is deployment?"}'
+### 2. Khởi chạy bằng Docker Compose
+Câu lệnh dưới đây sẽ build container siêu nhẹ và khởi chạy app kèm theo Redis DB Cache:
+```bash
+docker compose up --build -d
+```
+_Note: Web Server của bạn hiện tại sẽ Public ra Port `8000`. Cùng với đó Redis sẽ trực ở Port `6379`._
+
+### 3. Test Liveness & Readiness hệ thống
+Kiểm tra xem hệ thống đã sẵn sàng chưa (Health Check 200 OK):
+```bash
+curl http://localhost:8000/health
+curl http://localhost:8000/ready
 ```
 
 ---
 
-## Deploy Railway (< 5 phút)
+## 💻 Test API ModernBERT Inference (Cách gửi đi request thật)
+
+Vì chúng ta sử dụng Text Classifier/Mask Builder nên model là `ModernBERT-base`.
+Để thử nghiệm, bạn gửi lên câu hỏi và chừa lại thẻ `<Mask>`, AI Agent sẽ tự động điền thẻ đó giùm bạn.
 
 ```bash
-# Cài Railway CLI
+# Ở Terminal/Git Bash:
+curl -X POST http://localhost:8000/ask \
+  -H "X-API-Key: my-super-secret-key-123" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Hi ModernBERT, The capital city of Vietnam is [MASK]."}'
+```
+
+```powershell
+# Ở PowerShell (Windows):
+Invoke-RestMethod -Uri "http://localhost:8000/ask" `
+  -Method Post `
+  -Headers @{
+    "X-API-Key" = "my-super-secret-key-123"
+    "Content-Type" = "application/json"
+  } `
+  -Body '{"question": "Thủ đô của Việt Nam là [MASK]."}'
+```
+
+🎉 **Kết Quả Mong Chờ:**
+```json
+{
+  "question": "Thủ đô của Việt Nam là [MASK].",
+  "answer": "ModernBERT API response: Thủ đô của Việt Nam là Hà Nội. (Predicted mask: 'Hà Nội')",
+  "model": "answerdotai/ModernBERT-base",
+  "timestamp": "2026-04-17T15:20:00Z"
+}
+```
+
+---
+
+## 🌐 Mẹo Deploy lên Cloud Dễ Dàng
+
+### Option 1: Railway (Khuyên dùng)
+```bash
 npm i -g @railway/cli
-
-# Login và deploy
 railway login
 railway init
-railway variables set OPENAI_API_KEY=sk-...
-railway variables set AGENT_API_KEY=your-secret-key
+railway variables set HF_TOKEN=hf_xxxxxx...
+railway variables set AGENT_API_KEY=super-secret-key
 railway up
-
-# Nhận public URL!
-railway domain
 ```
 
----
-
-## Deploy Render
-
-1. Push repo lên GitHub
-2. Render Dashboard → New → Blueprint
-3. Connect repo → Render đọc `render.yaml`
-4. Set secrets: `OPENAI_API_KEY`, `AGENT_API_KEY`
-5. Deploy → Nhận URL!
-
----
-
-## Kiểm Tra Production Readiness
-
-```bash
-python check_production_ready.py
-```
-
-Script này kiểm tra tất cả items trong checklist và báo cáo những gì còn thiếu.
+### Option 2: Render
+1. Push toàn bộ source code này lên Github
+2. Truy cập web Render Dashboard chọn `New` > `Blueprint`
+3. Lựa chọn Repository git
+4. Cấu hình biến môi trường (`HF_TOKEN` và `AGENT_API_KEY`) trên website
+5. Nhấn tạo. Done!

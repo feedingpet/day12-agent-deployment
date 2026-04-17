@@ -92,6 +92,7 @@ def root():
 
 @app.post("/ask")
 async def ask_agent(question: str):
+    history = r.lrange(f"history:{user_id}", 0, -1)
     if not _is_ready:
         raise HTTPException(503, "Agent not ready")
     return {"answer": ask(question)}

@@ -1,202 +1,89 @@
 """
-ADVANCED — Full Security Stack
+BASIC — API Key Authentication
 
-Kết hợp:
-  ✅ JWT Authentication
-  ✅ Role-based access (user / admin)
-  ✅ Rate limiting (sliding window)
-  ✅ Cost guard (daily budget)
-  ✅ Input validation
-  ✅ Security headers
+Lớp bảo vệ đơn giản nhất: kiểm tra header X-API-Key.
+Phù hợp cho: internal API, B2B, MVP.
 
 Chạy:
-    python app.py
+    AGENT_API_KEY=my-secret-key python app.py
 
-Lấy token:
-    curl -X POST http://localhost:8000/auth/token \\
+Test:
+    # Có key → 200
+    curl -H "X-API-Key: my-secret-key" -X POST \\
          -H "Content-Type: application/json" \\
-         -d '{"username": "student", "password": "demo123"}'
+         -d '{"question":"hello"}' \\
+         http://localhost:8000/ask
 
-Dùng token:
-    curl -H "Authorization: Bearer <token>" \\
-         -X POST http://localhost:8000/ask \\
-         -H "Content-Type: application/json" \\
-         -d '{"question": "what is docker?"}'
+    # Không có key → 401
+    curl -X POST -H "Content-Type: application/json" \\
+         -d '{"question":"hello"}' \\
+         http://localhost:8000/ask
 """
 import os
-import time
-import logging
-from datetime import datetime, timezone
-from contextlib import asynccontextmanager
 
 
-from fastapi import FastAPI, Depends, HTTPException, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.security.api_key import APIKeyHeader
 import uvicorn
-
-from auth import verify_token, authenticate_user, create_token
-from rate_limiter import rate_limiter_user, rate_limiter_admin
-from cost_guard import cost_guard
 from utils.mock_llm import ask
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+app = FastAPI(title="Agent with API Key Auth")
 
-START_TIME = time.time()
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("Security layer initialized")
-    yield
-    logger.info("Shutdown")
+# ──────────────────────────────────────
+# API Key setup
+# ──────────────────────────────────────
+API_KEY = os.getenv("AGENT_API_KEY", "demo-key-change-in-production")
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-app = FastAPI(
-    title="Agent — Full Security Stack",
-    version="3.0.0",
-    lifespan=lifespan,
-    # ✅ Ẩn /docs trong production
-    docs_url="/docs" if os.getenv("ENVIRONMENT") != "production" else None,
-)
-
-# ──────────────────────────────────────────────────────────
-# Security Middleware
-# ──────────────────────────────────────────────────────────
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(","),
-    allow_methods=["GET", "POST"],
-    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
-)
-
-
-@app.middleware("http")
-async def security_headers(request: Request, call_next):
-    """Thêm security headers vào mọi response."""
-    response: Response = await call_next(request)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    # Ẩn server info
-    response.headers.pop("server", None)
-    return response
-
-
-# ──────────────────────────────────────────────────────────
-# Request/Response Models
-# ──────────────────────────────────────────────────────────
-class AskRequest(BaseModel):
-    question: str = Field(..., min_length=1, max_length=1000)
-
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-
-# ──────────────────────────────────────────────────────────
-# Auth Endpoints
-# ──────────────────────────────────────────────────────────
-
-@app.post("/auth/token")
-def login(body: LoginRequest):
+def verify_api_key(api_key: str = Security(api_key_header)) -> str:
     """
-    Public endpoint. Đổi username/password lấy JWT token.
-    Token hết hạn sau 60 phút.
+    Dependency: kiểm tra API key.
+    Inject vào bất kỳ endpoint nào cần bảo vệ.
     """
-    user = authenticate_user(body.username, body.password)
-    token = create_token(user["username"], user["role"])
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-        "expires_in_minutes": 60,
-        "hint": f"Include in header: Authorization: Bearer {token[:20]}...",
-    }
+    if not api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing API key. Include header: X-API-Key: <your-key>",
+        )
+    if api_key != API_KEY:
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid API key.",
+        )
+    return api_key
 
 
-# ──────────────────────────────────────────────────────────
-# Protected Agent Endpoint
-# ──────────────────────────────────────────────────────────
+# ──────────────────────────────────────
+# Endpoints
+# ──────────────────────────────────────
+
+@app.get("/")
+def root():
+    """Public endpoint — không cần auth"""
+    return {"message": "AI Agent API", "auth": "Required for /ask"}
+
 
 @app.post("/ask")
 async def ask_agent(
-    body: AskRequest,
-    request: Request,
-    user: dict = Depends(verify_token),  # ✅ JWT required
+    question: str,
+    _key: str = Depends(verify_api_key),  # ✅ require auth
 ):
-    """
-    Protected endpoint. Yêu cầu:
-    1. Valid JWT token
-    2. Trong rate limit
-    3. Trong budget
-    """
-    username = user["username"]
-    role = user["role"]
-
-    # ✅ Rate limiting — theo role
-    limiter = rate_limiter_admin if role == "admin" else rate_limiter_user
-    rate_info = limiter.check(username)
-
-    # ✅ Cost check trước khi gọi LLM
-    cost_guard.check_budget(username)
-
-    # Gọi LLM (mock)
-    response_text = ask(body.question)
-
-    # ✅ Ghi nhận usage (mock token count)
-    input_tokens = len(body.question.split()) * 2
-    output_tokens = len(response_text.split()) * 2
-    usage = cost_guard.record_usage(username, input_tokens, output_tokens)
-
+    """Protected endpoint — cần X-API-Key header"""
     return {
-        "question": body.question,
-        "answer": response_text,
-        "usage": {
-            "requests_remaining": rate_info["remaining"],
-            "budget_remaining_usd": usage.total_cost_usd,
-        },
+        "question": question,
+        "answer": ask(question),
     }
 
-
-@app.get("/me/usage")
-def my_usage(user: dict = Depends(verify_token)):
-    """Xem usage của bản thân."""
-    return cost_guard.get_usage(user["username"])
-
-
-@app.get("/admin/stats")
-def admin_stats(user: dict = Depends(verify_token)):
-    """Admin only: xem tổng stats."""
-    if user["role"] != "admin":
-        raise HTTPException(403, "Admin only")
-    return {
-        "total_users": "N/A (in-memory demo)",
-        "global_cost_usd": cost_guard._global_cost,
-        "global_budget_usd": cost_guard.global_daily_budget_usd,
-    }
-
-
-# ──────────────────────────────────────────────────────────
-# Health Checks (public)
-# ──────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
-    return {
-        "status": "ok",
-        "uptime_seconds": round(time.time() - START_TIME, 1),
-        "security": "JWT + RateLimit + CostGuard",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+    """Health check — public (platform cần access)"""
+    return {"status": "ok"}
 
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
-    print("\n=== Demo credentials ===")
-    print("  student / demo123  (10 req/min, $1/day budget)")
-    print("  teacher / teach456 (100 req/min, $1/day budget)")
-    print(f"\nDocs: http://localhost:{port}/docs\n")
-    uvicorn.run(app, host="0.0.0.0", port=port, reload=True)
+    print(f"API Key: {API_KEY}")
+    print(f"Test: curl -H 'X-API-Key: {API_KEY}' http://localhost:{port}/ask?question=hello")
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)

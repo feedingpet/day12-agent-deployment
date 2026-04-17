@@ -18,7 +18,8 @@ class Settings:
 
     # LLM
     openai_api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
-    llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", "gpt-4o-mini"))
+    hf_token: str = field(default_factory=lambda: os.getenv("HF_TOKEN", ""))
+    llm_model: str = field(default_factory=lambda: os.getenv("LLM_MODEL", "answerdotai/ModernBERT-base"))
 
     # Security
     agent_api_key: str = field(default_factory=lambda: os.getenv("AGENT_API_KEY", "dev-key-change-me"))
