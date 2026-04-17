@@ -34,7 +34,8 @@ RUN chown -R agent:agent /app
 USER agent
 
 ENV PATH=/home/agent/.local/bin:$PATH
-ENV PYTHONPATH=/app
+# Bổ sung đường dẫn trỏ thẳng tới thư mục site-packages của user agent
+ENV PYTHONPATH=/home/agent/.local/lib/python3.11/site-packages:/app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
