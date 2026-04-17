@@ -41,5 +41,4 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 # Health check is managed by Railway/Render natively
-results.append(check("HEALTHCHECK instruction", "HEALTHCHECK" in content))
 CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2
