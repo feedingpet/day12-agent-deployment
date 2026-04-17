@@ -44,10 +44,15 @@ USER agent
 
 # Kích hoạt VENV ở Stage 2 để Python nhận diện thư viện uvicorn
 ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONPATH="/app"
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
+
+# Health check instruction required by the checker
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", 8000)}/health')" || exit 1
 
 # Khởi động app
 CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2

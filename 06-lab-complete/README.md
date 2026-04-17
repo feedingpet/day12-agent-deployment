@@ -48,7 +48,7 @@ cp .env.example .env.local
 Sau đó mở `.env.local` lên để điền các key quan trọng:
 ```env
 # (QUAN TRỌNG) Token này lấy từ Hugging Face
-HF_TOKEN=hf_xxxx_dia_chi_token_cua_ban_xyz
+HF_TOKEN=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
 
 # (QUAN TRỌNG) Mật khẩu tự đặt để bảo vệ API chống gọi lén
 AGENT_API_KEY=my-super-secret-key-123
