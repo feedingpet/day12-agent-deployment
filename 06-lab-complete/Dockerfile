@@ -22,8 +22,8 @@ RUN groupadd -r agent && useradd -r -g agent -d /app agent
 
 WORKDIR /app
 
-# Copy packages từ builder
-COPY --from=builder /root/.local /home/agent/.local
+# Copy packages từ builder và cấp quyền luôn cho user agent
+COPY --chown=agent:agent --from=builder /root/.local /home/agent/.local
 
 # Copy application
 COPY app/ ./app/
@@ -41,5 +41,5 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 # Health check is managed by Railway/Render natively
-
+results.append(check("HEALTHCHECK instruction", "HEALTHCHECK" in content))
 CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2
